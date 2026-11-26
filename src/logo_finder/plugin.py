@@ -192,7 +192,7 @@ def _apply_decisions(pairs, decisions) -> int:
 
 class Plugin:
     name = "Logo Finder"
-    version = "0.2.0"
+    version = "0.1.0"
     description = (
         "Find channel logos in a preferred style from Schedules Direct and "
         "tv-logos and apply them after a dry-run report."
