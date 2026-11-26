@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-11-26T16:15:55Z",
+  "manifest": {
+    "slug": "logo-finder",
+    "name": "Logo Finder",
+    "description": "Find channel logos in a preferred style from Schedules Direct and tv-logos and apply them after a dry-run report.",
+    "author": "tylertufano",
+    "registry_url": "https://github.com/tylertufano/dispatcharr-logo-finder",
+    "registry_name": "tylertufano/dispatcharr-logo-finder",
+    "last_updated": "2026-11-26T16:15:55Z",
+    "latest": {
+      "version": "0.1.0",
+      "url": "https://github.com/tylertufano/dispatcharr-logo-finder/releases/download/v0.1.0/logo-finder-v0.1.0.zip",
+      "checksum_md5": "b25c5ae2577703f3cf0aa0b9e8634779",
+      "checksum_sha256": "83722cbbf1558c5d4bfdec9adc2f8d76440101c9f5d0309a69606ee4f9080fdf",
+      "size": 13285,
+      "last_updated": "2026-11-26T16:15:55Z",
+      "build_timestamp": "2026-11-26T16:15:55Z",
+      "min_dispatcharr_version": "0.34.0",
+      "latest_url": "https://github.com/tylertufano/dispatcharr-logo-finder/releases/download/v0.1.0/logo-finder-v0.1.0.zip"
+    },
+    "versions": [
+      {
+        "version": "0.1.0",
+        "url": "https://github.com/tylertufano/dispatcharr-logo-finder/releases/download/v0.1.0/logo-finder-v0.1.0.zip",
+        "checksum_md5": "b25c5ae2577703f3cf0aa0b9e8634779",
+        "checksum_sha256": "83722cbbf1558c5d4bfdec9adc2f8d76440101c9f5d0309a69606ee4f9080fdf",
+        "size": 13285,
+        "last_updated": "2026-11-26T16:15:55Z",
+        "build_timestamp": "2026-11-26T16:15:55Z",
+        "min_dispatcharr_version": "0.34.0"
+      }
+    ]
+  }
+}

@@ -1,11 +1,11 @@
 # dispatcharr-logo-finder
 
 Dispatcharr plugin: find channel logos in a preferred style (Schedules Direct
-listed logos, tv-logos, iptv-org) and add them to the logo inventory.
+listed logos, tv-logos) and add them to the logo inventory.
 
-**Status:** increment 2 of 4. This version uses **Schedules Direct** and
-**tv-logos** (`tv-logo/tv-logos`). iptv-org and packaging arrive in later
-increments.
+**Status:** packaged for installation from the plugin registry. Sources are
+**Schedules Direct** and **tv-logos** (`tv-logo/tv-logos`); iptv-org is
+deferred.
 
 ## What it does
 
@@ -86,13 +86,36 @@ when it is the same tv-logos URL as the candidate, or any non-light
 
 ## Install
 
-1. Copy `src/logo_finder/` into Dispatcharr's plugin directory (default
-   `/app/data/plugins/logo_finder/`, or the path in `DISPATCHARR_PLUGINS_DIR`),
-   or import it as a zip from the Plugins page.
-2. Reload plugins and enable **Logo Finder**. The manifest is version 2 and
-   requests the `background_tasks` and `outbound_network` capabilities.
-3. Set the channel profile, style and sources, then run **Preview** before
-   **Apply**.
+Logo Finder installs from this repository's plugin registry:
+
+1. In Dispatcharr, open **Plugins → Add repository** and enter
+   `https://raw.githubusercontent.com/tylertufano/dispatcharr-logo-finder/main/manifest.json`.
+2. Install **Logo Finder** from that repository. Dispatcharr asks you to
+   acknowledge the `background_tasks` and `outbound_network` capabilities: the
+   first runs the Preview and Apply actions in the background, the second
+   fetches Schedules Direct and tv-logos over HTTPS.
+3. Set the channel profile, style, sources and optional overrides (see
+   [Settings](#settings)).
+4. Run **Preview** first and read the report. It writes the report only and
+   changes no logos. Then run **Apply** to assign the proposed logos.
+
+Example override for channel 582 (Sky Sports Ultra HD 1):
+
+```json
+{"582": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/united-kingdom/hd/sky-sports-uhd-uk.png"}
+```
+
+For local development, copy `src/logo_finder/` into Dispatcharr's plugin
+directory (default `/app/data/plugins/logo_finder/`, or the path in
+`DISPATCHARR_PLUGINS_DIR`) and reload plugins instead of using the registry.
+
+## Releases
+
+`python3 scripts/build_release.py VERSION` stamps `plugin.json`, builds
+`dist/logo-finder-vVERSION.zip` (sorted entries, fixed timestamps, no caches)
+and updates `manifest.json` and `zips/logo-finder/manifest.json` with its size,
+MD5 and SHA-256. Rebuilding the same sources gives the same SHA-256. The
+planner creates the GitHub release from the ZIP; `dist/` is not committed.
 
 ## Settings
 
@@ -104,12 +127,7 @@ when it is the same tv-logos URL as the candidate, or any non-light
 | `default_country` | `us` | Two-letter country code used when the channel's `tvg_id` has no country suffix. |
 | `overrides` | `{}` | JSON object keyed by channel number. A URL forces that logo; `"keep"` leaves the channel alone. Overrides win over every source. |
 
-Example overrides (the planner sets these in the plugin settings after install;
-they are not hard-coded here):
-
-```json
-{"582": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/united-kingdom/hd/sky-sports-uhd-uk.png"}
-```
+See [Install](#install) for an example override.
 
 ## Report files
 
