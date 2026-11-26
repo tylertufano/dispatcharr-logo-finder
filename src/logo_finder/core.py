@@ -13,14 +13,24 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Iterable, Mapping, Optional, Sequence
 
+try:  # Loaded by Dispatcharr as ``<plugin package>.core``.
+    from . import tvlogos
+except ImportError:  # pragma: no cover - direct module import for local checks
+    import tvlogos  # type: ignore
+
 SD_LOGO_HOST = "logos.json.schedulesdirect.org"
 REPLACE = "replace"
 KEEP_ALREADY = "keep: already preferred"
 KEEP_NO_MATCH = "keep: no match"
+KEEP_GENERIC = "keep: generic only"
 OVERRIDE = "override"
 
 SOURCE_SD = "sd"
 SOURCE_OVERRIDE = "override"
+SOURCE_TVLOGOS = "tvlogos"
+
+VALID_SOURCES = (SOURCE_SD, SOURCE_TVLOGOS)
+DEFAULT_SOURCES = (SOURCE_SD, SOURCE_TVLOGOS)
 
 CSV_FIELDS = (
     "channel_number",
@@ -41,6 +51,7 @@ class ChannelView:
     name: str
     current_logo_url: Optional[str] = None
     station_id: Optional[str] = None
+    tvg_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +121,31 @@ def parse_overrides(raw) -> dict:
     return overrides
 
 
+def parse_sources(raw) -> tuple:
+    """Parse the ``sources`` setting into an ordered tuple of enabled sources.
+
+    ``raw`` is the comma-separated setting value; ``None`` or an empty value
+    means the default (Schedules Direct, then tv-logos). Overrides always run
+    first and are not part of this list.
+    """
+    if raw is None:
+        return DEFAULT_SOURCES
+    if isinstance(raw, str):
+        items = [part.strip().lower() for part in raw.replace(";", ",").split(",")]
+    else:
+        items = [str(part).strip().lower() for part in raw]
+    items = [item for item in items if item]
+    if not items:
+        return DEFAULT_SOURCES
+    unknown = sorted({item for item in items if item not in VALID_SOURCES})
+    if unknown:
+        raise ValueError(
+            f"sources has unknown value(s) {', '.join(unknown)}; "
+            f"use {', '.join(VALID_SOURCES)}"
+        )
+    return tuple(source for source in VALID_SOURCES if source in items)
+
+
 def is_numeric_station_id(station_id: Optional[str]) -> bool:
     """Gracenote station ids shared by Schedules Direct and Zap2XML are numeric."""
     if not isinstance(station_id, str):
@@ -153,8 +189,11 @@ def decide_channel(
     style: str,
     overrides: Mapping[str, str],
     sd_logos: Mapping[str, object],
+    tvlogos_index=None,
+    sources=None,
+    default_country: str = "us",
 ) -> LogoDecision:
-    """Apply override, style and idempotency rules to one channel."""
+    """Apply override, source order, style and idempotency rules to one channel."""
     number = format_channel_number(channel.number)
     current = (channel.current_logo_url or "").strip()
     name = channel.name or ""
@@ -181,42 +220,96 @@ def decide_channel(
             "override: use configured URL",
         )
 
-    candidate = sd_candidate(channel.station_id, style, sd_logos)
+    enabled = parse_sources(sources)
+    sd_available = SOURCE_SD in enabled
+    tvlogos_available = SOURCE_TVLOGOS in enabled and tvlogos_index is not None
+
+    sd_logo = sd_candidate(channel.station_id, style, sd_logos) if sd_available else None
+    tv_match = None
+    if tvlogos_available:
+        tv_match = tvlogos.match(
+            tvlogos_index,
+            name,
+            channel.tvg_id or channel.station_id,
+            style,
+            default_country,
+        )
+    tv_exact = tv_match.url if tv_match is not None and tv_match.is_exact else ""
+    tv_generic = tv_match if tv_match is not None and not tv_match.is_exact else None
 
     if is_preferred_logo(current, style):
         return LogoDecision(
             number,
             name,
             current,
-            candidate or "",
+            sd_logo or tv_exact,
             SOURCE_SD,
             KEEP_ALREADY,
             f"current logo is already an SD {style} logo",
         )
 
-    if candidate is None:
-        if is_numeric_station_id(channel.station_id):
-            reason = f"no SD {style} logo for station {channel.station_id.strip()}"
-        else:
-            reason = "channel has no numeric Gracenote station id"
+    if tvlogos_available and tvlogos.is_preferred_url(current, name, tvlogos_index):
+        return LogoDecision(
+            number,
+            name,
+            current,
+            sd_logo or tv_exact,
+            SOURCE_TVLOGOS,
+            KEEP_ALREADY,
+            "current logo is already a tv-logos file for this channel",
+        )
+
+    if sd_logo is not None:
+        return LogoDecision(
+            number,
+            name,
+            current,
+            sd_logo,
+            SOURCE_SD,
+            REPLACE,
+            f"SD {style} logo available",
+        )
+
+    if tv_exact:
+        return LogoDecision(
+            number,
+            name,
+            current,
+            tv_exact,
+            SOURCE_TVLOGOS,
+            REPLACE,
+            f"tv-logos exact match: {tv_match.path}",
+        )
+
+    if tv_generic is not None:
         return LogoDecision(
             number,
             name,
             current,
             "",
-            SOURCE_SD,
-            KEEP_NO_MATCH,
-            reason,
+            SOURCE_TVLOGOS,
+            KEEP_GENERIC,
+            f"generic only: {tv_generic.reason}",
         )
 
+    if not sd_available:
+        reason = "sd source is disabled and no tv-logos exact match"
+    elif is_numeric_station_id(channel.station_id):
+        reason = f"no SD {style} logo for station {channel.station_id.strip()}"
+        if tvlogos_available:
+            reason += " and no tv-logos exact match"
+    else:
+        reason = "channel has no numeric Gracenote station id"
+        if tvlogos_available:
+            reason += " and no tv-logos exact match"
     return LogoDecision(
         number,
         name,
         current,
-        candidate,
-        SOURCE_SD,
-        REPLACE,
-        f"SD {style} logo available",
+        "",
+        SOURCE_TVLOGOS if not sd_available else SOURCE_SD,
+        KEEP_NO_MATCH,
+        reason,
     )
 
 
@@ -225,8 +318,23 @@ def decide_channels(
     style: str,
     overrides: Mapping[str, str],
     sd_logos: Mapping[str, object],
+    tvlogos_index=None,
+    sources=None,
+    default_country: str = "us",
 ) -> list:
-    return [decide_channel(channel, style, overrides, sd_logos) for channel in channels]
+    enabled = parse_sources(sources)
+    return [
+        decide_channel(
+            channel,
+            style,
+            overrides,
+            sd_logos,
+            tvlogos_index,
+            enabled,
+            default_country,
+        )
+        for channel in channels
+    ]
 
 
 def should_apply(decision: LogoDecision) -> bool:
@@ -239,6 +347,7 @@ def summary(decisions: Iterable[LogoDecision]) -> dict:
         "replace": 0,
         "override": 0,
         "keep_already_preferred": 0,
+        "keep_generic": 0,
         "keep_no_match": 0,
     }
     for decision in decisions:
@@ -249,6 +358,8 @@ def summary(decisions: Iterable[LogoDecision]) -> dict:
             counts["override"] += 1
         elif decision.decision == KEEP_ALREADY:
             counts["keep_already_preferred"] += 1
+        elif decision.decision == KEEP_GENERIC:
+            counts["keep_generic"] += 1
         else:
             counts["keep_no_match"] += 1
     return counts
