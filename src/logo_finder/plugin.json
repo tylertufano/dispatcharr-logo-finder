@@ -1,0 +1,57 @@
+{
+  "manifest_version": 2,
+  "name": "Logo Finder",
+  "version": "0.1.0",
+  "description": "Find channel logos in a preferred style from Schedules Direct and apply them after a dry-run report.",
+  "author": "tylertufano",
+  "help_url": "https://github.com/tylertufano/dispatcharr-logo-finder",
+  "capabilities": ["background_tasks"],
+  "fields": [
+    {
+      "id": "profile",
+      "label": "Channel profile",
+      "type": "string",
+      "default": "fixed",
+      "help_text": "Only channels in this channel profile are considered."
+    },
+    {
+      "id": "style",
+      "label": "Logo style",
+      "type": "select",
+      "default": "dark",
+      "options": [
+        {"value": "dark", "label": "Dark"},
+        {"value": "light", "label": "Light"},
+        {"value": "white", "label": "White"},
+        {"value": "gray", "label": "Gray"}
+      ]
+    },
+    {
+      "id": "overrides",
+      "label": "Overrides",
+      "type": "text",
+      "default": "{}",
+      "help_text": "JSON object keyed by channel number: a URL to use, or \"keep\" to leave the channel alone."
+    }
+  ],
+  "actions": [
+    {
+      "id": "preview",
+      "label": "Preview",
+      "description": "Report the proposed logo changes without writing anything.",
+      "button_label": "Preview",
+      "button_variant": "outline",
+      "button_color": "blue",
+      "async": true
+    },
+    {
+      "id": "apply",
+      "label": "Apply",
+      "description": "Assign the proposed logos and write the report. Existing logos are never deleted.",
+      "button_label": "Apply",
+      "button_variant": "filled",
+      "button_color": "blue",
+      "async": true
+    }
+  ]
+}
