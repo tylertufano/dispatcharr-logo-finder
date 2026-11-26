@@ -297,6 +297,21 @@ class TvLogosSourceTests(unittest.TestCase):
         self.assertFalse(core.should_apply(second))
         self.assertEqual(second.decision, core.KEEP_ALREADY)
 
+    def test_provider_tvg_id_selects_the_country(self):
+        view = core.ChannelView(
+            number=583,
+            name="Sky Sports Main Event 4K",
+            station_id="49609",
+            tvg_id="SkySportsMainEventUHD.uk",
+        )
+        decision = core.decide_channel(view, "dark", {}, {}, INDEX)
+        self.assertEqual(decision.decision, core.REPLACE)
+        self.assertEqual(
+            decision.candidate_url,
+            tvlogos.RAW_BASE
+            + "countries/united-kingdom/hd/sky-sports-main-event-uhd-uk.png",
+        )
+
     def test_default_country_is_used_without_a_tvg_suffix(self):
         decision = core.decide_channel(
             self.view("ScreenPix Action", None), "dark", {}, {}, INDEX

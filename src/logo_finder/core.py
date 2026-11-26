@@ -51,6 +51,7 @@ class ChannelView:
     name: str
     current_logo_url: Optional[str] = None
     station_id: Optional[str] = None
+    tvg_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -229,7 +230,7 @@ def decide_channel(
         tv_match = tvlogos.match(
             tvlogos_index,
             name,
-            channel.station_id,
+            channel.tvg_id or channel.station_id,
             style,
             default_country,
         )

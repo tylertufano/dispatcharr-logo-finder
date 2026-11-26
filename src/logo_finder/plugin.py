@@ -137,6 +137,7 @@ def _channels_in_profile(profile_name: str) -> list:
             name=channel.name,
             current_logo_url=channel.logo.url if channel.logo else None,
             station_id=channel.epg_data.tvg_id if channel.epg_data else None,
+            tvg_id=channel.tvg_id,
         )
         pairs.append((channel, view))
     return pairs
