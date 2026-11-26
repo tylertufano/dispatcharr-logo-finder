@@ -7,10 +7,32 @@ sys.path.insert(
 )
 
 import core  # noqa: E402
+import tvlogos  # noqa: E402
 
 DARK = "https://logos.json.schedulesdirect.org/stationLogos/s56783_dark_360w_270h.png?v=9a56b7b950fb8f7293d2"
 LIGHT = "https://logos.json.schedulesdirect.org/stationLogos/s56783_light_360w_270h.png?v=9a56b7b950fb8f7293d2"
 OVERRIDE_URL = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/united-kingdom/hd/sky-sports-uhd-uk.png"
+
+SNAPSHOT = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "data", "tvlogos_files.txt"
+)
+TL_SCREENPIX = (
+    "https://raw.githubusercontent.com/tv-logo/tv-logos/main/"
+    "countries/united-states/screenpix-action-us.png"
+)
+
+
+def snapshot_index():
+    """The #369 tv-logos tree snapshot, indexed the way the plugin indexes the API."""
+    with open(SNAPSHOT, encoding="utf-8") as handle:
+        names = [line.strip() for line in handle if line.strip()]
+    paths = [
+        tvlogos.COUNTRY_PREFIX + name for name in names if name.lower().endswith(".png")
+    ]
+    return tvlogos.build_index(paths)
+
+
+INDEX = snapshot_index()
 
 
 def channel(number=526, name="Big Ten Network", current=None, station_id="56783"):
@@ -165,6 +187,133 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(core.format_channel_number(526), "526")
         self.assertEqual(core.format_channel_number(12.5), "12.5")
         self.assertEqual(core.format_channel_number(None), "")
+
+
+class TvLogosSourceTests(unittest.TestCase):
+    def view(self, name, station_id=None, current=None, number=661):
+        return core.ChannelView(
+            number=number, name=name, current_logo_url=current, station_id=station_id
+        )
+
+    def test_parse_sources_orders_and_drops_duplicates(self):
+        self.assertEqual(core.parse_sources("tvlogos,sd"), ("sd", "tvlogos"))
+        self.assertEqual(core.parse_sources(" tvlogos ; tvlogos "), ("tvlogos",))
+        self.assertEqual(core.parse_sources(None), ("sd", "tvlogos"))
+        self.assertEqual(core.parse_sources(""), ("sd", "tvlogos"))
+
+    def test_parse_sources_rejects_unknown_names(self):
+        with self.assertRaises(ValueError):
+            core.parse_sources("sd,iptvorg")
+
+    def test_sd_wins_over_tvlogos(self):
+        decision = core.decide_channel(
+            self.view("ScreenPix Action", "56783"), "dark", {}, {"56783": DARK}, INDEX
+        )
+        self.assertEqual(decision.decision, core.REPLACE)
+        self.assertEqual(decision.source, core.SOURCE_SD)
+        self.assertEqual(decision.candidate_url, DARK)
+
+    def test_tvlogos_is_used_when_sd_has_nothing(self):
+        decision = core.decide_channel(
+            self.view("ScreenPix Action", "ScreenPixAction.us"), "dark", {}, {}, INDEX
+        )
+        self.assertEqual(decision.decision, core.REPLACE)
+        self.assertEqual(decision.source, core.SOURCE_TVLOGOS)
+        self.assertEqual(decision.candidate_url, TL_SCREENPIX)
+
+    def test_sources_setting_can_disable_tvlogos(self):
+        decision = core.decide_channel(
+            self.view("ScreenPix Action", "ScreenPixAction.us"),
+            "dark",
+            {},
+            {},
+            INDEX,
+            "sd",
+        )
+        self.assertEqual(decision.decision, core.KEEP_NO_MATCH)
+        self.assertEqual(decision.candidate_url, "")
+        self.assertIn("no numeric Gracenote station id", decision.reason)
+
+    def test_sources_setting_can_disable_sd(self):
+        decision = core.decide_channel(
+            self.view("ScreenPix Action", "56783"), "dark", {}, {"56783": DARK}, INDEX, "tvlogos"
+        )
+        self.assertEqual(decision.decision, core.REPLACE)
+        self.assertEqual(decision.source, core.SOURCE_TVLOGOS)
+
+    def test_generic_only_keeps_the_current_logo(self):
+        decision = core.decide_channel(
+            self.view("ESPN 4K", "ESPN4K.us", "https://example.test/espn-4k.png"),
+            "dark",
+            {},
+            {},
+            INDEX,
+        )
+        self.assertEqual(decision.decision, core.KEEP_GENERIC)
+        self.assertEqual(decision.candidate_url, "")
+        self.assertFalse(core.should_apply(decision))
+        self.assertIn("generic only", decision.reason)
+        self.assertIn("espn-us.png", decision.reason)
+
+    def test_big_ten_overflow_is_generic_only(self):
+        decision = core.decide_channel(
+            self.view("Big Ten Overflow 2", "BigTen2.us"), "dark", {}, {}, INDEX
+        )
+        self.assertEqual(decision.decision, core.KEEP_GENERIC)
+
+    def test_tsn_team_feed_is_generic_only(self):
+        decision = core.decide_channel(
+            self.view("TSN 4K Toronto Maple Leafs", "TorontoMapleLeafs.nhl"),
+            "dark",
+            {},
+            {},
+            INDEX,
+        )
+        self.assertEqual(decision.decision, core.KEEP_GENERIC)
+        self.assertIn("tsn-4k-ca.png", decision.reason)
+
+    def test_already_preferred_tvlogos_url(self):
+        decision = core.decide_channel(
+            self.view("ScreenPix Action", "ScreenPixAction.us", TL_SCREENPIX),
+            "dark",
+            {},
+            {},
+            INDEX,
+        )
+        self.assertEqual(decision.decision, core.KEEP_ALREADY)
+        self.assertEqual(decision.source, core.SOURCE_TVLOGOS)
+
+    def test_second_tvlogos_apply_is_a_noop(self):
+        first = core.decide_channel(
+            self.view("ScreenPix Action", "ScreenPixAction.us"), "dark", {}, {}, INDEX
+        )
+        second = core.decide_channel(
+            self.view("ScreenPix Action", "ScreenPixAction.us", first.candidate_url),
+            "dark",
+            {},
+            {},
+            INDEX,
+        )
+        self.assertFalse(core.should_apply(second))
+        self.assertEqual(second.decision, core.KEEP_ALREADY)
+
+    def test_default_country_is_used_without_a_tvg_suffix(self):
+        decision = core.decide_channel(
+            self.view("ScreenPix Action", None), "dark", {}, {}, INDEX
+        )
+        self.assertEqual(decision.decision, core.REPLACE)
+
+    def test_summary_counts_generic_only(self):
+        decisions = [
+            core.decide_channel(self.view("ESPN 4K", "ESPN4K.us"), "dark", {}, {}, INDEX),
+            core.decide_channel(
+                self.view("ScreenPix Action", "ScreenPixAction.us"), "dark", {}, {}, INDEX
+            ),
+        ]
+        counts = core.summary(decisions)
+        self.assertEqual(counts["keep_generic"], 1)
+        self.assertEqual(counts["replace"], 1)
+        self.assertEqual(counts["total"], sum(v for k, v in counts.items() if k != "total"))
 
 
 if __name__ == "__main__":

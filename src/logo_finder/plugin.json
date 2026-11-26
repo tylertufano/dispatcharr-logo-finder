@@ -1,11 +1,11 @@
 {
   "manifest_version": 2,
   "name": "Logo Finder",
-  "version": "0.1.0",
-  "description": "Find channel logos in a preferred style from Schedules Direct and apply them after a dry-run report.",
+  "version": "0.2.0",
+  "description": "Find channel logos in a preferred style from Schedules Direct and tv-logos and apply them after a dry-run report.",
   "author": "tylertufano",
   "help_url": "https://github.com/tylertufano/dispatcharr-logo-finder",
-  "capabilities": ["background_tasks"],
+  "capabilities": ["background_tasks", "outbound_network"],
   "fields": [
     {
       "id": "profile",
@@ -25,6 +25,20 @@
         {"value": "white", "label": "White"},
         {"value": "gray", "label": "Gray"}
       ]
+    },
+    {
+      "id": "sources",
+      "label": "Sources",
+      "type": "string",
+      "default": "sd,tvlogos",
+      "help_text": "Comma-separated sources in order: sd (Schedules Direct), tvlogos (tv-logo/tv-logos). Overrides always run first."
+    },
+    {
+      "id": "default_country",
+      "label": "Default country",
+      "type": "string",
+      "default": "us",
+      "help_text": "Two-letter country code used when the channel's tvg_id has no country suffix (for example us, uk, ca)."
     },
     {
       "id": "overrides",

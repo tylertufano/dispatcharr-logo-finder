@@ -1,25 +1,31 @@
-"""Dispatcharr entry point for Logo Finder (increment 1: Schedules Direct only)."""
+"""Dispatcharr entry point for Logo Finder (Schedules Direct and tv-logos)."""
 
 from __future__ import annotations
 
 import os
 
 try:  # Loaded by Dispatcharr as ``<plugin package>.plugin``.
+    from . import tvlogos
     from .core import (
+        SOURCE_TVLOGOS,
         ChannelView,
         decide_channels,
         is_numeric_station_id,
         parse_overrides,
+        parse_sources,
         should_apply,
         summary,
         write_report,
     )
 except ImportError:  # pragma: no cover - direct module import for local checks
+    import tvlogos  # type: ignore
     from core import (  # type: ignore
+        SOURCE_TVLOGOS,
         ChannelView,
         decide_channels,
         is_numeric_station_id,
         parse_overrides,
+        parse_sources,
         should_apply,
         summary,
         write_report,
@@ -45,6 +51,26 @@ FIELDS = [
             {"value": "white", "label": "White"},
             {"value": "gray", "label": "Gray"},
         ],
+    },
+    {
+        "id": "sources",
+        "label": "Sources",
+        "type": "string",
+        "default": "sd,tvlogos",
+        "help_text": (
+            "Comma-separated sources in order: sd (Schedules Direct), "
+            "tvlogos (tv-logo/tv-logos). Overrides always run first."
+        ),
+    },
+    {
+        "id": "default_country",
+        "label": "Default country",
+        "type": "string",
+        "default": "us",
+        "help_text": (
+            "Two-letter country code used when the channel's tvg_id has no "
+            "country suffix (for example us, uk, ca)."
+        ),
     },
     {
         "id": "overrides",
@@ -165,10 +191,10 @@ def _apply_decisions(pairs, decisions) -> int:
 
 class Plugin:
     name = "Logo Finder"
-    version = "0.1.0"
+    version = "0.2.0"
     description = (
-        "Find channel logos in a preferred style from Schedules Direct and apply "
-        "them after a dry-run report."
+        "Find channel logos in a preferred style from Schedules Direct and "
+        "tv-logos and apply them after a dry-run report."
     )
     author = "tylertufano"
     help_url = "https://github.com/tylertufano/dispatcharr-logo-finder"
@@ -183,18 +209,56 @@ class Plugin:
         settings = context.get("settings") or {}
         profile_name = (settings.get("profile") or "fixed").strip() or "fixed"
         style = (settings.get("style") or "dark").strip() or "dark"
+        default_country = (settings.get("default_country") or "us").strip().lower() or "us"
 
         try:
             overrides = parse_overrides(settings.get("overrides", "{}"))
+            sources = parse_sources(settings.get("sources"))
         except ValueError as exc:
             _log(context, "error", f"Logo Finder: {exc}")
             return {"status": "error", "message": str(exc)}
+
+        data_dir = context.get("data_dir")
+        tvlogos_index = None
+        tvlogos_info = None
+        if SOURCE_TVLOGOS in sources:
+            try:
+                tree = tvlogos.fetch_tree(data_dir)
+                tvlogos_index = tvlogos.build_index(tree["paths"])
+                tvlogos_info = {
+                    "files": len(tvlogos_index),
+                    "cache_age_hours": round(tree["cache_age_seconds"] / 3600.0, 1),
+                    "from_cache": tree["from_cache"],
+                    "stale": tree["stale"],
+                }
+                if tree.get("error"):
+                    tvlogos_info["error"] = tree["error"]
+                _log(
+                    context,
+                    "info",
+                    f"Logo Finder: tv-logos tree has {len(tvlogos_index)} PNGs, "
+                    f"cache age {tvlogos_info['cache_age_hours']} h"
+                    + (" (stale)" if tree["stale"] else ""),
+                )
+            except Exception as exc:  # noqa: BLE001 - fall back to Schedules Direct
+                _log(
+                    context,
+                    "warning",
+                    f"Logo Finder: tv-logos unavailable, using Schedules Direct only: {exc}",
+                )
+                tvlogos_info = {"error": str(exc)}
 
         try:
             pairs = _channels_in_profile(profile_name)
             sd_logos = _sd_logos([view.station_id for _channel, view in pairs])
             decisions = decide_channels(
-                [view for _channel, view in pairs], style, overrides, sd_logos
+                [view for _channel, view in pairs],
+                style,
+                overrides,
+                sd_logos,
+                tvlogos_index,
+                sources,
+                default_country,
             )
         except Exception as exc:  # noqa: BLE001 - surface a useful action result
             _log(context, "exception", f"Logo Finder: {exc}")
@@ -223,17 +287,21 @@ class Plugin:
                     "report": report_paths,
                 }
 
-        message = (
-            f"Preview: {counts['replace']} replace, {counts['override']} override, "
+        detail = (
+            f"{counts['replace']} replace, {counts['override']} override, "
             f"{counts['keep_already_preferred']} already preferred, "
+            f"{counts['keep_generic']} generic only, "
             f"{counts['keep_no_match']} no match."
         )
+        message = f"Preview: {detail}"
         if action == "apply":
-            message = (
-                f"Applied {applied} logo change(s): {counts['replace']} replace, "
-                f"{counts['override']} override, "
-                f"{counts['keep_already_preferred']} already preferred, "
-                f"{counts['keep_no_match']} no match."
+            message = f"Applied {applied} logo change(s): {detail}"
+        if tvlogos_info and "error" in tvlogos_info:
+            message += f" tv-logos unavailable: {tvlogos_info['error']}"
+        elif tvlogos_info:
+            message += (
+                f" tv-logos tree: {tvlogos_info['files']} files, "
+                f"cache age {tvlogos_info['cache_age_hours']} h."
             )
 
         return {
@@ -242,4 +310,5 @@ class Plugin:
             "summary": counts,
             "applied": applied,
             "report": report_paths,
+            "tvlogos": tvlogos_info,
         }
